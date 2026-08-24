@@ -1,0 +1,127 @@
+---
+title: "ME315_LAB02 - Processamento de Bases de Dados em Lote"
+author: "Alessandro Silva - 236928"
+format: pdf
+editor: visual
+---
+
+```{r setup, message=FALSE, warning=FALSE}
+library(readr)
+library(dplyr)
+```
+
+## Questão 1:
+
+Para calcular um percentual de atraso por grupo (dia, mês, companhia), não é necessário guardar todas as observações, basta, pra cada grupo, manter:
+
+- `n_atraso`: número de voos com `ARRIVAL_DELAY > 10`;
+- `n_total`: número total de voos válidos naquele grupo.
+
+Com essas duas contagens por lote, é possível somar entre lotes e só depois calcular o percentual final, sem precisar manter os dados brutos em memória.
+
+## Questão 2:
+
+```{r getStats}
+getStats <- function(input, pos) {
+  input %>%
+    filter(AIRLINE %in% c("AA", "DL", "UA", "US")) %>%
+    filter(!is.na(YEAR), !is.na(MONTH), !is.na(DAY), !is.na(ARRIVAL_DELAY)) %>%
+    group_by(YEAR, MONTH, DAY, AIRLINE) %>%
+    summarise(
+      n_atraso = sum(ARRIVAL_DELAY > 10, na.rm = TRUE),
+      n_total  = n(),
+      .groups  = "drop"
+    )
+}
+```
+
+## Questão 3:
+
+```{r leitura_chunked, message=FALSE, warning=FALSE}
+col_types_flights <- cols_only(
+  YEAR          = col_integer(),
+  MONTH         = col_integer(),
+  DAY           = col_integer(),
+  AIRLINE       = col_character(),
+  ARRIVAL_DELAY = col_integer()
+)
+
+stats_parcial <- read_csv_chunked(
+  file      = "flights.csv",
+  callback  = DataFrameCallback$new(getStats),
+  chunk_size = 100000,
+  col_types = col_types_flights
+)
+```
+
+## Questão 4
+
+```{r computeStats}
+computeStats <- function(stats_parcial) {
+  stats_parcial %>%
+    group_by(YEAR, MONTH, DAY, AIRLINE) %>%
+    summarise(
+      n_atraso = sum(n_atraso),
+      n_total  = sum(n_total),
+      .groups  = "drop"
+    ) %>%
+    mutate(
+      Data = as.Date(sprintf("%04d-%02d-%02d", YEAR, MONTH, DAY)),
+      Perc = n_atraso / n_total
+    ) %>%
+    rename(Cia = AIRLINE) %>%
+    select(Cia, Data, Perc)
+}
+
+stats_final <- computeStats(stats_parcial)
+stats_final
+```
+
+## Questão 5:
+
+```{r pacotes_calendario, message=FALSE, warning=FALSE}
+library(ggcal)      
+library(ggplot2)
+pal <- scale_fill_gradient(low = "#4575b4", high = "#d73027")
+```
+
+```{r baseCalendario}
+baseCalendario <- function(stats, cia) {
+  sub <- stats %>% filter(Cia == cia)
+  ggcal(sub$Data, sub$Perc)
+}
+
+cAA <- baseCalendario(stats_final, "AA")
+cDL <- baseCalendario(stats_final, "DL")
+cUA <- baseCalendario(stats_final, "UA")
+cUS <- baseCalendario(stats_final, "US")
+```
+
+### American Airlines (AA)
+
+```{r calendario_AA}
+cAA + pal + ggtitle("American Airlines - Percentual de atrasos na chegada (2015)")
+```
+
+### Delta Airlines (DL)
+
+```{r calendario_DL}
+cDL + pal + ggtitle("Delta Airlines - Percentual de atrasos na chegada (2015)")
+```
+
+### United Airlines (UA)
+
+```{r calendario_UA}
+cUA + pal + ggtitle("United Airlines - Percentual de atrasos na chegada (2015)")
+```
+
+### US Airways (US)
+
+```{r calendario_US}
+cUS + pal + ggtitle("US Airways - Percentual de atrasos na chegada (2015)")
+```
+
+```{r}
+Sys.setenv(TZ = "America/Sao_Paulo")
+Sys.time()
+```
