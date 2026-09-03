@@ -1,0 +1,182 @@
+---
+title: "lista04"
+format: pdf
+editor: visual
+---
+
+```{r}
+library(DBI)
+library(RSQLite)
+
+#conexão com SQL
+con <- dbConnect(SQLite(), "me315.sqlite")
+```
+
+# Questão 1
+```{sql connection=con}
+SELECT *
+FROM PRESERVE
+WHERE PNO IN (2,4,6,8,10);
+```
+
+# Questão 2
+```{sql connection=con}
+select*
+from preserve
+where pname not in ('DANCING PRAIRIE', 'MULESHOE RANCH', 'MCELWAIN-OLSEN', 'TATKON');
+
+```
+
+# Questão 3
+```{sql connection=con}
+select*
+from preserve
+where pno between 3 and 10
+
+```
+
+# Questão 4
+```{sql connection=con}
+select*
+from preserve
+where pno not between 3 and 10
+
+```
+
+# Questão 5
+```{sql connection=con}
+SELECT STATE, PNO, ACRES 
+FROM PRESERVE 
+WHERE STATE NOT IN ('MT', 'AZ') 
+  AND (ACRES < 50 OR ACRES > 800)
+ORDER BY PNO DESC;
+
+```
+
+# Questão 6
+```{sql connection=con}
+select pname
+from preserve
+where pname like 'D%'
+```
+
+# Questão 7
+```{sql connection=con}
+select pname
+from preserve
+where pname like '%TOWN';
+
+
+```
+
+# Questão 8
+```{sql connection=con}
+select pname
+from preserve
+where pname like '%PRAIRIE'
+
+```
+
+# Questão 9
+```{sql connection=con}
+select pname
+from preserve
+where pname like "%ING%"
+
+```
+
+# Questão 10
+```{sql connection=con}
+select pname
+from preserve
+where pname like '%E'
+```
+
+# Questão 11
+```{sql connection=con}
+select pname
+from preserve
+where pname like "%ME%"
+
+```
+
+# Questão 12
+```{sql connection=con}
+SELECT PNAME 
+FROM PRESERVE 
+WHERE PNAME LIKE '%M%E%'
+```
+
+# Questão 13
+```{sql connection=con}
+select pname
+from preserve
+where pname like '_A%'
+```
+
+# Questão 14
+```{sql connection=con}
+SELECT PNAME 
+FROM PRESERVE 
+WHERE PNAME LIKE '% %'
+```
+
+# Questão 15
+```{sql connection=con}
+select pname
+from preserve
+where pname like '%FARM%' or '%SWAMP%' or '%PRAIRE%'
+
+```
+
+# Questão 16
+```{sql connection=con}
+select pname
+from preserve
+where pname like '%.%' or '%-%' 
+
+```
+
+# Questão 17
+```{sql connection=con}
+SELECT PNAME 
+FROM PRESERVE 
+WHERE PNAME LIKE '____R%PRAIRIE';
+```
+
+# Questão 18
+```{sql connection=con}
+select *
+from employee
+where DNO between 10 and 40
+
+```
+
+# Questão 19
+```{sql connection=con}
+select *
+from employee
+where DNO not between 10 and 40
+
+```
+
+# Questão 20
+```{sql connection=con}
+select *
+from employee
+where salary between 500 and 2000
+
+```
+
+# Questão 21
+```{sql connection=con}
+select *
+from employee
+where salary not between 500 and 2000
+```
+
+```{r}
+Sys.setenv(TZ = "America/Sao_Paulo")
+Sys.time()
+```
+
