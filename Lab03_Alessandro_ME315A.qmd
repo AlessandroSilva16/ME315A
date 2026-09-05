@@ -1,0 +1,137 @@
+---
+title: "Laboratório 3"
+author: "Alessandro Silva - RA:236928"
+format: pdf
+editor: visual
+---
+```{r setup}
+library(readr)
+library(dplyr)
+library(tidyr)
+library(leaflet)
+library(ggplot2)
+library(maps)
+```
+## 1
+### Airports
+```{r}
+airports <- read_csv(
+  "airports.csv",
+  col_types = cols_only(
+    IATA_CODE = col_character(),
+    CITY      = col_character(),
+    STATE     = col_character(),
+    LATITUDE  = col_double(),
+    LONGITUDE = col_double()
+  )
+)
+airports
+```
+### Airlines
+```{r}
+airlines <- read_csv("airlines.csv")
+airlines
+```
+### flights
+```{r}
+# lista que vai acumular as estatísticas suficientes de cada bloco
+lista_stats <- list()
+processa_bloco <- function(bloco, pos) {
+  stats_bloco <- bloco |>
+    filter(substr(DESTINATION_AIRPORT, 1, 1) != "1") |>
+    drop_na() |>
+    group_by(DESTINATION_AIRPORT) |>
+    summarise(
+      soma_atraso = sum(ARRIVAL_DELAY),
+      n_voos      = n(),
+      .groups = "drop"
+    )
+  # acumula na lista 
+  lista_stats[[length(lista_stats) + 1]] <<- stats_bloco
+}
+read_csv_chunked(
+  "flights.csv",
+  callback  = SideEffectChunkCallback$new(processa_bloco),
+  chunk_size = 1e6,
+  col_types = cols_only(
+    DESTINATION_AIRPORT = col_character(),
+    ARRIVAL_DELAY        = col_double()
+  )
+)
+# combina as estatísticas suficientes de todos os blocos
+flights <- bind_rows(lista_stats) |>
+  group_by(DESTINATION_AIRPORT) |>
+  summarise(
+    soma_atraso = sum(soma_atraso),
+    n_voos      = sum(n_voos),
+    .groups = "drop"
+  ) |>
+  mutate(atraso_medio = soma_atraso / n_voos)
+flights
+```
+# 2. Join 
+### Aeroportos em `flights` mas ausentes em `airports`
+```{r}
+aeroportos_ausentes <- flights |>
+  anti_join(airports, by = c("DESTINATION_AIRPORT" = "IATA_CODE"))
+aeroportos_ausentes
+```
+```{r}
+flights <- flights |>
+  left_join(airports, by = c("DESTINATION_AIRPORT" = "IATA_CODE"))
+flights
+```
+## 3.aeroportos por estado
+```{r}
+aeroportos_por_estado <- airports |>
+  count(STATE, name = "n_aeroportos") |>
+  arrange(desc(n_aeroportos))
+aeroportos_por_estado
+```
+## 4. Mapa dos atrasos por aeroporto
+```{r}
+this <- flights |>
+  filter(!is.na(LATITUDE), !is.na(LONGITUDE)) |>
+  leaflet() |>
+  addTiles() |>
+  addMarkers(
+    lng   = ~LONGITUDE,
+    lat   = ~LATITUDE,
+    popup = ~paste0(
+      DESTINATION_AIRPORT, " - ", CITY, "/", STATE,
+      "<br>Atraso médio: ", round(atraso_medio, 1), " min"
+    )
+  )
+```
+```{r mapa-leaflet-run}
+mapa_dados <- flights |>
+  filter(!is.na(LATITUDE), !is.na(LONGITUDE))
+
+estados <- map_data("state")
+
+ggplot() +
+  geom_polygon(
+    data = estados,
+    aes(x = long, y = lat, group = group),
+    fill = "grey95", color = "grey70"
+  ) +
+  geom_point(
+    data = mapa_dados,
+    aes(x = LONGITUDE, y = LATITUDE, color = atraso_medio),
+    size = 2, alpha = 0.8
+  ) +
+  scale_color_gradient2(
+    low = "steelblue", mid = "grey90", high = "firebrick",
+    midpoint = 0, name = "Atraso médio\n(min)"
+  ) +
+  coord_fixed(1.3, xlim = c(-130, -65), ylim = c(24, 50)) +
+  labs(
+    title = "Atraso médio de chegada por aeroporto de destino",
+    x = NULL, y = NULL
+  ) +
+  theme_minimal()
+```
+```{r}
+Sys.setenv(TZ = "America/Sao_Paulo")
+Sys.time()
+```
