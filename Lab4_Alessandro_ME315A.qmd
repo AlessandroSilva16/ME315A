@@ -1,0 +1,122 @@
+---
+title: "Laboratório 4"
+author: "Alessandro Silva - RA:236928"
+format: pdf
+documentclass: article
+editor: visual
+---
+
+# Questao 1
+
+```{r}
+library(readxl)
+library(tidyverse)
+```
+
+# Questao 2
+
+```{r}
+fname <- "WDIEXCEL.xlsx"
+file.exists(fname)
+```
+
+# Questao 3
+
+```{r}
+countries <- read_excel(fname, sheet = "Country")
+countries
+```
+
+# Questao 4
+
+```{r}
+# Brasil + 4 outros países escolhidos
+paises_escolhidos <- c("BRA", "USA", "CHN", "IND", "ZAF")
+
+countries <- countries |>
+  filter(`Country Code` %in% paises_escolhidos)
+
+countries
+```
+
+# Questao 5
+
+```{r}
+WDI <- read_excel(fname, sheet = "Data")
+WDI
+```
+
+# Questao 6
+
+```{r}
+WDI <- WDI |>
+  select(`Country Code`, `Indicator Code`, `1960`:`2018`)
+
+WDI
+```
+
+# Questao 7
+Os dados NÃO estão em formato tidy, pois cada ano está espalhado em uma coluna diferente, quando deveria existir uma única coluna "YEAR" e uma coluna de valor. 
+```{r}
+WDI <- WDI |>
+  pivot_longer(
+    cols      = `1960`:`2018`,
+    names_to  = "YEAR",
+    values_to = "VALUE"
+  )
+
+WDI
+```
+
+# Questao 8
+
+```{r}
+class(WDI$YEAR)
+
+# year não é inteiro (veio como character do pivot_longer), então:
+WDI <- WDI |>
+  mutate(YEAR = as.integer(YEAR))
+
+class(WDI$YEAR)
+```
+
+# Questao 9
+
+```{r}
+WDI <- WDI |>
+  filter(`Country Code` %in% countries$`Country Code`) |>
+  filter(`Indicator Code` == "SP.DYN.CBRT.IN") |>
+  rename(SP.DYN.CBRT.IN = VALUE) |>
+  inner_join(countries |> select(`Country Code`, `Short Name`),
+             by = "Country Code") |>
+  select(`Country Code`, `Short Name`, YEAR, SP.DYN.CBRT.IN)
+
+WDI
+```
+
+# Questao 10
+
+```{r}
+WDI <- WDI |>
+  arrange(`Country Code`, YEAR)
+
+WDI
+```
+
+# Questao 11
+
+```{r}
+ggplot(WDI, aes(x = YEAR, y = SP.DYN.CBRT.IN, color = `Short Name`)) +
+  geom_line() +
+  labs(
+    title = "Taxa bruta de natalidade por país (1960-2018)",
+    x = "Ano",
+    y = "Taxa bruta de natalidade (por 1.000 habitantes)",
+    color = "País"
+  ) +
+  theme_minimal()
+```
+```{r}
+Sys.setenv(TZ = "America/Sao_Paulo")
+Sys.time()
+```
