@@ -1,0 +1,203 @@
+---
+title: "Lab05"
+author: "Alessandro Silva"
+format: pdf
+editor: visual
+---
+
+```{r}
+library(tidyverse)
+library(maps)
+library(ggrepel)
+library(lubridate)
+library(scales)
+library(readr)
+```
+
+```{r}
+le_aeroportos <- function(arquivo_aeroportos) {
+  read_csv(arquivo_aeroportos, col_types = cols(
+    IATA_CODE = col_character(),
+    AIRPORT   = col_character(),
+    CITY      = col_character(),
+    STATE     = col_character(),
+    COUNTRY   = col_character(),
+    LATITUDE  = col_double(),
+    LONGITUDE = col_double()
+  )) |>
+    filter(!is.na(LATITUDE), !is.na(LONGITUDE)) |>
+    select(
+      codigo_aeroporto = IATA_CODE,
+      nome_aeroporto   = AIRPORT,
+      latitude         = LATITUDE,
+      longitude        = LONGITUDE
+    )
+}
+```
+
+```{r}
+tipos_colunas_voos <- cols(
+  YEAR                = col_integer(),
+  MONTH               = col_integer(),
+  DAY                 = col_integer(),
+  DAY_OF_WEEK         = col_integer(),
+  AIRLINE             = col_character(),
+  FLIGHT_NUMBER       = col_integer(),
+  TAIL_NUMBER         = col_character(),
+  ORIGIN_AIRPORT      = col_character(),
+  DESTINATION_AIRPORT = col_character(),
+  SCHEDULED_DEPARTURE = col_character(),
+  DEPARTURE_TIME      = col_character(),
+  DEPARTURE_DELAY     = col_double(),
+  TAXI_OUT            = col_double(),
+  WHEELS_OFF          = col_character(),
+  SCHEDULED_TIME      = col_double(),
+  ELAPSED_TIME        = col_double(),
+  AIR_TIME            = col_double(),
+  DISTANCE            = col_double(),
+  WHEELS_ON           = col_character(),
+  TAXI_IN             = col_double(),
+  SCHEDULED_ARRIVAL   = col_character(),
+  ARRIVAL_TIME        = col_character(),
+  ARRIVAL_DELAY       = col_double(),
+  DIVERTED            = col_integer(),
+  CANCELLED           = col_integer(),
+  CANCELLATION_REASON = col_character(),
+  AIR_SYSTEM_DELAY    = col_double(),
+  SECURITY_DELAY      = col_double(),
+  AIRLINE_DELAY       = col_double(),
+  LATE_AIRCRAFT_DELAY = col_double(),
+  WEATHER_DELAY       = col_double()
+)
+```
+
+```{r}
+converte_hhmm_para_minutos <- function(horario_hhmm) {
+  horario_numerico <- suppressWarnings(as.numeric(horario_hhmm))
+  (horario_numerico %/% 100) * 60 + (horario_numerico %% 100)
+}
+
+formata_minutos_como_hora <- function(minutos) {
+  ifelse(is.na(minutos), NA_character_,
+         sprintf("%02d:%02d", minutos %/% 60, minutos %% 60))
+}
+```
+
+```{r}
+le_voos_da_aeronave_em_partes <- function(arquivo, tail_number, linhas_por_parte = 500000) {
+  filtra_bloco <- function(bloco, posicao) filter(bloco, TAIL_NUMBER == tail_number)
+
+  read_csv_chunked(
+    arquivo,
+    callback   = DataFrameCallback$new(filtra_bloco),
+    chunk_size = linhas_por_parte,
+    col_types  = tipos_colunas_voos,
+    progress   = FALSE
+  ) |> as_tibble()
+}
+```
+
+```{r}
+analisa_aeronave <- function(tail_number, arquivo,
+                              arquivo_aeroportos = file.path("dados", "airports.csv"),
+                              linhas_por_parte = 500000) {
+
+  voos <- le_voos_da_aeronave_em_partes(arquivo, tail_number, linhas_por_parte)
+  if (nrow(voos) == 0) stop("Nenhum voo encontrado para ", tail_number)
+
+  aeroportos <- le_aeroportos(arquivo_aeroportos)
+
+  trajetos <- voos |>
+    mutate(
+      data_voo              = make_date(YEAR, MONTH, DAY),
+      minutos_partida       = coalesce(
+        converte_hhmm_para_minutos(DEPARTURE_TIME),
+        converte_hhmm_para_minutos(SCHEDULED_DEPARTURE)
+      ),
+      instante_partida      = as_datetime(data_voo) + minutes(minutos_partida),
+      hora_partida_real     = formata_minutos_como_hora(converte_hhmm_para_minutos(DEPARTURE_TIME)),
+      velocidade_media_mph  = if_else(!is.na(AIR_TIME) & AIR_TIME > 0,
+                                       DISTANCE / (AIR_TIME / 60), NA_real_)
+    ) |>
+    arrange(instante_partida) |>
+    mutate(ordem_trajeto = row_number()) |>
+    left_join(
+      aeroportos |> select(ORIGIN_AIRPORT = codigo_aeroporto,
+                            latitude_origem = latitude, longitude_origem = longitude),
+      by = "ORIGIN_AIRPORT"
+    ) |>
+    left_join(
+      aeroportos |> select(DESTINATION_AIRPORT = codigo_aeroporto,
+                            latitude_destino = latitude, longitude_destino = longitude),
+      by = "DESTINATION_AIRPORT"
+    ) |>
+    relocate(ordem_trajeto, data_voo, instante_partida, velocidade_media_mph,
+             .before = everything())
+
+  trajetos_mapa <- trajetos |>
+    filter(CANCELLED == 0,
+           !is.na(latitude_origem), !is.na(longitude_origem),
+           !is.na(latitude_destino), !is.na(longitude_destino))
+
+  aeroportos_visitados <- bind_rows(
+    trajetos_mapa |> select(codigo_aeroporto = ORIGIN_AIRPORT,
+                             latitude = latitude_origem, longitude = longitude_origem),
+    trajetos_mapa |> select(codigo_aeroporto = DESTINATION_AIRPORT,
+                             latitude = latitude_destino, longitude = longitude_destino)
+  ) |>
+    count(codigo_aeroporto, latitude, longitude, name = "passagens") |>
+    arrange(desc(passagens))
+
+  mapa <- ggplot() +
+    geom_polygon(data = map_data("state"), aes(long, lat, group = group),
+                 fill = "grey95", colour = "white", linewidth = 0.3) +
+    geom_segment(
+      data = trajetos_mapa,
+      aes(x = longitude_origem, y = latitude_origem,
+          xend = longitude_destino, yend = latitude_destino,
+          linewidth = velocidade_media_mph, colour = ordem_trajeto),
+      alpha = 0.45, lineend = "round"
+    ) +
+    geom_point(
+      data = aeroportos_visitados,
+      aes(longitude, latitude, size = passagens),
+      colour = "grey20", fill = "#FDB863", shape = 21, stroke = 0.3
+    ) +
+    geom_text_repel(
+      data = slice_head(aeroportos_visitados, n = 12),
+      aes(longitude, latitude, label = codigo_aeroporto),
+      size = 2.6, seed = 315, max.overlaps = Inf
+    ) +
+    scale_linewidth_continuous(name = "Velocidade\nmedia (mph)", range = c(0.2, 2)) +
+    scale_colour_viridis_c(name = "Ordem do\ntrecho", option = "plasma") +
+    scale_size_continuous(name = "Passagens", range = c(1, 6)) +
+    coord_quickmap(
+      xlim = range(aeroportos_visitados$longitude) + c(-2, 2),
+      ylim = range(aeroportos_visitados$latitude) + c(-2, 2)
+    ) +
+    labs(title = paste("Trajeto da aeronave", tail_number, "em 2015"),
+         x = "Longitude", y = "Latitude") +
+    theme_minimal(base_size = 10) +
+    theme(panel.grid = element_blank())
+
+  list(tabela = trajetos, grafico = mapa)
+}
+
+```
+
+```{r}
+#| cache: true
+resultado <- analisa_aeronave("N431WN", "flights.csv", "airports.csv")
+```
+
+```{r}
+resultado$tabela |>
+  select(ordem_trajeto, data_voo, hora_partida_real, AIRLINE, ORIGIN_AIRPORT,
+         DESTINATION_AIRPORT, DISTANCE, velocidade_media_mph, ARRIVAL_DELAY) |>
+  head(15) |>
+  knitr::kable()
+```
+
+```{r}
+resultado$grafico
+```
