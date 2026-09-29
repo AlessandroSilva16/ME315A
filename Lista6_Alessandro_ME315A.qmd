@@ -1,0 +1,127 @@
+---
+title: "Lista 6"
+author: "Alessandro Silva - RA:236928"
+format: pdf
+editor: visual
+---
+
+```{r}
+library(DBI)
+library(RSQLite)
+con <- dbConnect(RSQLite::SQLite(), "me315.sqlite")
+```
+
+## Questão 1
+```{sql connection=con}
+select state, min(acres) as menor_area
+from preserve
+group by state
+
+```
+
+## Questão 2
+```{sql connection=con}
+select state, max(acres) maior_area
+from preserve
+where acres <= 10000
+group by state
+
+```
+
+## Questão 3
+```{sql connection=con}
+select state, max(acres) maior_area
+from preserve
+where acres <= 10000
+group by state
+order by maior_area desc
+```
+
+## Questão 4
+```{sql connection=con}
+select state, max(acres) as maior_area
+from preserve
+group by state
+having maior_area < 25000
+```
+
+## Questão 5
+```{sql connection=con}
+select state, min(acres) as menor_area
+from preserve
+group by state
+having menor_area < 100
+```
+
+## Questão 6
+```{sql connection=con}
+select state, pname, max(acres) as maior_area
+from preserve
+where acres > 1000
+group by state
+having maior_area < 25000
+```
+
+## Questão 7
+```{sql connection=con}
+select state, sum(acres) as tamanho_total
+from preserve
+group by state
+having tamanho_total between 10000 and 50000
+```
+
+## Questão 8
+```{sql connection=con}
+select state, avg(acres) as qtd_media
+from preserve
+group by state
+order by qtd_media desc
+limit 1
+```
+
+## Questão 9
+```{sql connection=con}
+select dno, avg(salary) as salario_medio
+from employee
+group by dno
+```
+
+## Questão 10
+```{sql connection=con}
+select dno, sum(salary) as total_salario, max(salary) as salario_maximo, min(salary) as salario_minimo
+from employee
+group by dno
+```
+
+## Questão 11
+```{sql connection=con}
+select dno, count(*) as qtd_func
+from employee
+where not dno=40
+group by dno
+```
+
+## Questão 12
+```{sql connection=con}
+select dno, count(*) as qtd_func
+from employee
+group by dno
+having qtd_func >2
+```
+
+## Questão 13
+```{sql connection=con}
+select state, sum(acres)
+from preserve
+group by state
+
+union all
+select 'Total' as state, sum(acres) as 'sum(acres)'
+from preserve
+```
+
+
+```{r}
+Sys.setenv(TZ = "America/Sao_Paulo")
+Sys.time()
+```
