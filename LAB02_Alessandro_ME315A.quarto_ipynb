@@ -1,0 +1,196 @@
+{
+  "cells": [
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "---\n",
+        "title: \"Laboratório 2\"\n",
+        "author: \"Alessandro Silva - RA: 236928\"\n",
+        "format:\n",
+        "  typst:\n",
+        "    toc: false\n",
+        "---"
+      ],
+      "id": "f0101a20"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "import polars as pl\n",
+        "\n",
+        "# Ajuste os caminhos se os arquivos estiverem em outra pasta\n",
+        "PATH_BASICS     = \"title.basics0.tsv\"\n",
+        "PATH_RATINGS    = \"title.ratings.tsv\"\n",
+        "PATH_PRINCIPALS = \"title.principals0.tsv\"\n",
+        "\n",
+        "def le_tsv(path):\n",
+        "    return pl.scan_csv(\n",
+        "        path,\n",
+        "        separator=\"\\t\",\n",
+        "        null_values=[\"\\\\N\"],   # \\N = valor faltante\n",
+        "        quote_char=None,       # evita problemas com aspas nos títulos\n",
+        "        infer_schema_length=10_000,\n",
+        "    )\n",
+        "\n",
+        "basics     = le_tsv(PATH_BASICS)\n",
+        "ratings    = le_tsv(PATH_RATINGS)\n",
+        "principals = le_tsv(PATH_PRINCIPALS)"
+      ],
+      "id": "5124eaf7",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "Vamos considerar como \"filmes\" os títulos com `titleType == \"movie\"` e juntar com as avaliações.\n"
+      ],
+      "id": "fb195cc1"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "filmes = (\n",
+        "    basics\n",
+        "    .filter(pl.col(\"titleType\") == \"movie\")\n",
+        "    .join(ratings, on=\"tconst\", how=\"inner\")\n",
+        ")"
+      ],
+      "id": "4eb93da8",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "## Questão 1: Os 5 filmes com as maiores notas\n",
+        "\n",
+        "Em caso de empate na nota média, o desempate é feito pelo número de votos (maior número de votos primeiro).\n"
+      ],
+      "id": "b87d8341"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "top5 = (\n",
+        "    filmes\n",
+        "    .select(\"tconst\", \"primaryTitle\", \"startYear\", \"averageRating\", \"numVotes\")\n",
+        "    .sort([\"averageRating\", \"numVotes\"], descending=[True, True])\n",
+        "    .head(5)\n",
+        "    .collect(engine=\"streaming\")\n",
+        ")\n",
+        "\n",
+        "top5"
+      ],
+      "id": "8864d2c6",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "## Questão 2: Gênero mais frequente entre os filmes com nota maior que 8\n",
+        "\n",
+        "A coluna `genres` contém vários gêneros separados por vírgula, então é preciso separar e \"explodir\" a coluna antes de contar.\n"
+      ],
+      "id": "9612a062"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "generos = (\n",
+        "    filmes\n",
+        "    .filter(pl.col(\"averageRating\") > 8)\n",
+        "    .select(\"tconst\", \"genres\")\n",
+        "    .drop_nulls(\"genres\")\n",
+        "    .with_columns(pl.col(\"genres\").str.split(\",\"))\n",
+        "    .explode(\"genres\")\n",
+        "    .group_by(\"genres\")\n",
+        "    .agg(pl.len().alias(\"n_filmes\"))\n",
+        "    .sort(\"n_filmes\", descending=True)\n",
+        "    .collect(engine=\"streaming\")\n",
+        ")\n",
+        "\n",
+        "generos.head(10)"
+      ],
+      "id": "642d4db5",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "generos.head(1)"
+      ],
+      "id": "2bb0851c",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "## Questão 3: Os 3 atores/atrizes que mais participaram de filmes com nota maior que 7.5\n",
+        "\n",
+        "Consideramos as categorias `actor` e `actress` da tabela `principals`, e contamos os filmes distintos de cada pessoa.\n"
+      ],
+      "id": "eef1e368"
+    },
+    {
+      "cell_type": "code",
+      "metadata": {},
+      "source": [
+        "filmes_bons = (\n",
+        "    filmes\n",
+        "    .filter(pl.col(\"averageRating\") > 7.5)\n",
+        "    .select(\"tconst\")\n",
+        ")\n",
+        "\n",
+        "top3_atores = (\n",
+        "    principals\n",
+        "    .filter(pl.col(\"category\").is_in([\"actor\", \"actress\"]))\n",
+        "    .select(\"tconst\", \"nconst\", \"category\")\n",
+        "    .join(filmes_bons, on=\"tconst\", how=\"inner\")\n",
+        "    .group_by(\"nconst\")\n",
+        "    .agg(pl.col(\"tconst\").n_unique().alias(\"n_filmes\"))\n",
+        "    .sort(\"n_filmes\", descending=True)\n",
+        "    .head(3)\n",
+        "    .collect(engine=\"streaming\")\n",
+        ")\n",
+        "\n",
+        "top3_atores"
+      ],
+      "id": "b6b04715",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {},
+      "source": [
+        "::: {.callout-note}\n",
+        "A base fornecida não inclui o arquivo `name.basics`, então os atores/atrizes são identificados apenas pelo código `nconst` (ex.: `nm0000093`). Para obter o nome, basta buscar o código em https://www.imdb.com/name/nconst/.\n",
+        ":::"
+      ],
+      "id": "d1b23650"
+    }
+  ],
+  "metadata": {
+    "kernelspec": {
+      "display_name": "Python 3",
+      "language": "python",
+      "name": "python3"
+    }
+  },
+  "nbformat": 4,
+  "nbformat_minor": 5
+}

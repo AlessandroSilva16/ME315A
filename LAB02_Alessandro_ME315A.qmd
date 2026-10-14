@@ -1,0 +1,100 @@
+---
+title: "Laboratório 2"
+author: "Alessandro Silva - RA: 236928"
+format:
+  typst:
+    toc: false
+---
+
+```{r}
+#| include: false
+reticulate::py_require("polars")
+```
+
+```{python}
+import polars as pl
+
+PATH_BASICS     = "title.basics0.tsv"
+PATH_RATINGS    = "title.ratings.tsv"
+PATH_PRINCIPALS = "title.principals0.tsv"
+
+def le_tsv(path):
+    return pl.scan_csv(
+        path,
+        separator="\t",
+        null_values=["\\N"],   
+        quote_char=None,       
+        infer_schema_length=10_000,)
+
+basics     = le_tsv(PATH_BASICS)
+ratings    = le_tsv(PATH_RATINGS)
+principals = le_tsv(PATH_PRINCIPALS)
+```
+
+```{python}
+filmes = (
+    basics
+    .filter(pl.col("titleType") == "movie")
+    .join(ratings, on="tconst", how="inner")
+)
+```
+
+## Questão 1
+
+```{python}
+top5 = (
+    filmes
+    .select("tconst", "primaryTitle", "startYear", "averageRating", "numVotes")
+    .sort(["averageRating", "numVotes"], descending=[True, True])
+    .head(5)
+    .collect(engine="streaming")
+)
+
+top5
+```
+
+## Questão 2
+```{python}
+generos = (
+    filmes
+    .filter(pl.col("averageRating") > 8)
+    .select("tconst", "genres")
+    .drop_nulls("genres")
+    .with_columns(pl.col("genres").str.split(","))
+    .explode("genres")
+    .group_by("genres")
+    .agg(pl.len().alias("n_filmes"))
+    .sort("n_filmes", descending=True)
+    .collect(engine="streaming")
+)
+
+generos.head(10)
+```
+
+```{python}
+generos.head(1)
+```
+
+## Questão 3
+
+```{python}
+filmes_bons = (
+    filmes
+    .filter(pl.col("averageRating") > 7.5)
+    .select("tconst")
+)
+
+top3_atores = (
+    principals
+    .filter(pl.col("category").is_in(["actor", "actress"]))
+    .select("tconst", "nconst", "category")
+    .join(filmes_bons, on="tconst", how="inner")
+    .group_by("nconst")
+    .agg(pl.col("tconst").n_unique().alias("n_filmes"))
+    .sort("n_filmes", descending=True)
+    .head(3)
+    .collect(engine="streaming")
+)
+
+top3_atores
+```
